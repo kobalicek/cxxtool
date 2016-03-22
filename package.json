@@ -1,0 +1,37 @@
+{
+  "name": "cxxtool",
+  "version": "0.0.1",
+
+  "description": "A tool designed to maintain C, C++ and ObjectiveC projects.",
+  "keywords": [
+    "c",
+    "c++",
+    "generator",
+    "project",
+    "tools"
+  ],
+
+  "homepage": "https://github.com/kobalicek/cxxtool",
+
+  "repository" : {
+    "type": "git",
+    "url": "https://github.com/kobalicek/cxxtool.git"
+  },
+
+  "bugs": {
+    "url": "https://github.com/kobalicek/cxxtool/issues"
+  },
+
+  "contributors": [{
+    "name": "Petr Kobalicek",
+    "email": "kobalicek.petr@gmail.com",
+    "url": "http://kobalicek.com"
+  }],
+
+  "license": "Unlicense",
+  "main": "index.js",
+
+  "bin": {
+    "cxxtool": "cxxtool"
+  }
+}

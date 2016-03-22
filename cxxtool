@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+
+// CxxTool - A tool designed to maintain C, C++ and ObjectiveC code.
+"use strict";
+return require("./main.js")(process.argv);
