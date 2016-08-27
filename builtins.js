@@ -7,7 +7,6 @@
 exports.__cxxinfo__ = { public: false };
 
 var assert = require("assert");
-var lang = require("./lang");
 var string = require("./string");
 
 var hasOwn = Object.prototype.hasOwnProperty;
@@ -402,7 +401,7 @@ exports.ARCH_SIMD_INCLUDE = {
     #if defined(_MSC_VER) || defined(__BORLANDC__) || defined(__CODEGEARC__)
     # include <intrin.h>
     #endif
-    
+
     #if @prefix@_ARCH_SSE
     # include <xmmintrin.h>
     #endif
@@ -478,6 +477,7 @@ exports.ARCH_SIMD_INCLUDE = {
 //     - 1600 - Visual C++ 2010
 //     - 1700 - Visual C++ 2012
 //     - 1800 - Visual C++ 2013
+//     - 1900 - Visual C++ 2015
 //   - Features:
 //     - http://blogs.msdn.com/b/vcblog/archive/2010/04/06/c-0x-core-language-features-in-vc10-the-table.aspx
 //     - http://blogs.msdn.com/b/vcblog/archive/2011/09/12/10209291.aspx
@@ -489,26 +489,34 @@ exports.ARCH_SIMD_INCLUDE = {
 exports.CC = {
   template: `
     // \\def @prefix@_CC_CLANG
-    // True if the detected C++ compiler is CLANG (contains normalized CLANG version).
+    // Non-zero if the detected C++ compiler is CLANG (contains normalized CLANG version).
     //
     // \\def @prefix@_CC_CODEGEAR
-    // True if the detected C++ compiler is CODEGEAR or BORLAND (version not normalized).
+    // Non-zero if the detected C++ compiler is CODEGEAR or BORLAND (version not normalized).
+    //
+    // \\def @prefix@_CC_INTEL
+    // Non-zero if the detected C++ compiler is INTEL (version not normalized).
     //
     // \\def @prefix@_CC_GCC
-    // True if the detected C++ compiler is GCC (contains normalized GCC version).
+    // Non-zero if the detected C++ compiler is GCC (contains normalized GCC version).
     //
     // \\def @prefix@_CC_MSC
-    // True if the detected C++ compiler is MSC (contains normalized MSC version).
+    // Non-zero if the detected C++ compiler is MSC (contains normalized MSC version).
     //
     // \\def @prefix@_CC_MINGW
-    // Defined to 32 or 64 in case this is a MINGW, otherwise 0.
+    // Non-zero if the detected C++ compiler is MINGW32 (set to 32) or MINGW64 (set to 64).
 
-    #define @prefix@_CC_CLANG 0
+    #define @prefix@_CC_CLANG    0
     #define @prefix@_CC_CODEGEAR 0
-    #define @prefix@_CC_GCC 0
-    #define @prefix@_CC_MSC 0
+    #define @prefix@_CC_GCC      0
+    #define @prefix@_CC_INTEL    0
+    #define @prefix@_CC_MSC      0
 
-    #if defined(__CODEGEARC__)
+    // Intel masquerades as GCC, so check for it first.
+    #if defined(__INTEL_COMPILER)
+    # undef  @prefix@_CC_INTEL
+    # define @prefix@_CC_INTEL __INTEL_COMPILER
+    #elif defined(__CODEGEARC__)
     # undef  @prefix@_CC_CODEGEAR
     # define @prefix@_CC_CODEGEAR (__CODEGEARC__)
     #elif defined(__BORLANDC__)
@@ -531,11 +539,26 @@ exports.CC = {
     # error "[@product@] Unable to detect the C/C++ compiler."
     #endif
 
-    #if @prefix@_CC_GCC && defined(__GXX_EXPERIMENTAL_CXX0X__)
-    # define @prefix@_CC_GCC_CXX0X 1
-    #else
-    # define @prefix@_CC_GCC_CXX0X 0
+    #if @prefix@_CC_INTEL && (defined(__GNUC__) || defined(__clang__))
+    # define @prefix@_CC_INTEL_COMPAT_MODE 1
+    # else
+    # define @prefix@_CC_INTEL_COMPAT_MODE 0
     #endif
+
+    #define @prefix@_CC_CODEGEAR_EQ(x, y) (@prefix@_CC_CODEGEAR == (((x) << 8) + (y)))
+    #define @prefix@_CC_CODEGEAR_GE(x, y) (@prefix@_CC_CODEGEAR >= (((x) << 8) + (y)))
+
+    #define @prefix@_CC_CLANG_EQ(x, y, z) (@prefix@_CC_CLANG == ((x) * 10000000 + (y) * 100000 + (z)))
+    #define @prefix@_CC_CLANG_GE(x, y, z) (@prefix@_CC_CLANG >= ((x) * 10000000 + (y) * 100000 + (z)))
+
+    #define @prefix@_CC_GCC_EQ(x, y, z) (@prefix@_CC_GCC == ((x) * 10000000 + (y) * 100000 + (z)))
+    #define @prefix@_CC_GCC_GE(x, y, z) (@prefix@_CC_GCC >= ((x) * 10000000 + (y) * 100000 + (z)))
+
+    #define @prefix@_CC_INTEL_EQ(x, y) (@prefix@_CC_INTEL == (((x) * 100) + (y)))
+    #define @prefix@_CC_INTEL_GE(x, y) (@prefix@_CC_INTEL >= (((x) * 100) + (y)))
+
+    #define @prefix@_CC_MSC_EQ(x, y, z) (@prefix@_CC_MSC == ((x) * 10000000 + (y) * 100000 + (z)))
+    #define @prefix@_CC_MSC_GE(x, y, z) (@prefix@_CC_MSC >= ((x) * 10000000 + (y) * 100000 + (z)))
 
     #if defined(__MINGW64__)
     # define @prefix@_CC_MINGW 64
@@ -545,56 +568,39 @@ exports.CC = {
     # define @prefix@_CC_MINGW 0
     #endif
 
-    #define @prefix@_CC_CODEGEAR_EQ(x, y, z) (@prefix@_CC_CODEGEAR == (x << 8) + y)
-    #define @prefix@_CC_CODEGEAR_GE(x, y, z) (@prefix@_CC_CODEGEAR >= (x << 8) + y)
+    #if defined(__cplusplus)
+    # if __cplusplus >= 201103L
+    #  define @prefix@_CC_CXX_VERSION __cplusplus
+    # elif defined(__GXX_EXPERIMENTAL_CXX0X__) || \
+           @prefix@_CC_MSC_GE(18, 0, 0) || \
+           @prefix@_CC_INTEL_GE(14, 0)
+    #  define @prefix@_CC_CXX_VERSION 201103L
+    # else
+    #  define @prefix@_CC_CXX_VERSION 199711L
+    # endif
+    #endif
 
-    #define @prefix@_CC_CLANG_EQ(x, y, z) (@prefix@_CC_CLANG == x * 10000000 + y * 100000 + z)
-    #define @prefix@_CC_CLANG_GE(x, y, z) (@prefix@_CC_CLANG >= x * 10000000 + y * 100000 + z)
-
-    #define @prefix@_CC_GCC_EQ(x, y, z) (@prefix@_CC_GCC == x * 10000000 + y * 100000 + z)
-    #define @prefix@_CC_GCC_GE(x, y, z) (@prefix@_CC_GCC >= x * 10000000 + y * 100000 + z)
-
-    #define @prefix@_CC_MSC_EQ(x, y, z) (@prefix@_CC_MSC == x * 10000000 + y * 100000 + z)
-    #define @prefix@_CC_MSC_GE(x, y, z) (@prefix@_CC_MSC >= x * 10000000 + y * 100000 + z)
+    #if !defined(@prefix@_CC_CXX_VERSION)
+    # define @prefix@_CC_CXX_VERSION 0
+    #endif
   `
 };
 
 exports.CC_FEATURES = {
   requires: ["CC"],
   template: `
-    // \\def @prefix@_CC_HAS_NATIVE_CHAR
-    // True if the C++ compiler treats char as a native type.
-    //
-    // \\def @prefix@_CC_HAS_NATIVE_WCHAR_T
-    // True if the C++ compiler treats wchar_t as a native type.
-    //
-    // \\def @prefix@_CC_HAS_NATIVE_CHAR16_T
-    // True if the C++ compiler treats char16_t as a native type.
-    //
-    // \\def @prefix@_CC_HAS_NATIVE_CHAR32_T
-    // True if the C++ compiler treats char32_t as a native type.
-    //
-    // \\def @prefix@_CC_HAS_OVERRIDE
-    // True if the C++ compiler supports override keyword.
-    //
-    // \\def @prefix@_CC_HAS_NOEXCEPT
-    // True if the C++ compiler supports noexcept keyword.
-
     #if @prefix@_CC_CLANG
-    # define @prefix@_CC_HAS_ATTRIBUTE               (1)
-    # define @prefix@_CC_HAS_BUILTIN                 (1)
-    # define @prefix@_CC_HAS_DECLSPEC                (0)
-
-    # define @prefix@_CC_HAS_ALIGNAS                 (__has_extension(__cxx_alignas__))
-    # define @prefix@_CC_HAS_ALIGNOF                 (__has_extension(__cxx_alignof__))
-    # define @prefix@_CC_HAS_ASSUME                  (0)
     # define @prefix@_CC_HAS_ATTRIBUTE_ALIGNED       (__has_attribute(__aligned__))
     # define @prefix@_CC_HAS_ATTRIBUTE_ALWAYS_INLINE (__has_attribute(__always_inline__))
     # define @prefix@_CC_HAS_ATTRIBUTE_NOINLINE      (__has_attribute(__noinline__))
     # define @prefix@_CC_HAS_ATTRIBUTE_NORETURN      (__has_attribute(__noreturn__))
+    # define @prefix@_CC_HAS_ATTRIBUTE_OPTIMIZE      (__has_attribute(__optimize__))
     # define @prefix@_CC_HAS_BUILTIN_ASSUME          (__has_builtin(__builtin_assume))
+    # define @prefix@_CC_HAS_BUILTIN_ASSUME_ALIGNED  (__has_builtin(__builtin_assume_aligned))
     # define @prefix@_CC_HAS_BUILTIN_EXPECT          (__has_builtin(__builtin_expect))
     # define @prefix@_CC_HAS_BUILTIN_UNREACHABLE     (__has_builtin(__builtin_unreachable))
+    # define @prefix@_CC_HAS_ALIGNAS                 (__has_extension(__cxx_alignas__))
+    # define @prefix@_CC_HAS_ALIGNOF                 (__has_extension(__cxx_alignof__))
     # define @prefix@_CC_HAS_CONSTEXPR               (__has_extension(__cxx_constexpr__))
     # define @prefix@_CC_HAS_DECLTYPE                (__has_extension(__cxx_decltype__))
     # define @prefix@_CC_HAS_DEFAULT_FUNCTION        (__has_extension(__cxx_defaulted_functions__))
@@ -603,29 +609,25 @@ exports.CC_FEATURES = {
     # define @prefix@_CC_HAS_INITIALIZER_LIST        (__has_extension(__cxx_generalized_initializers__))
     # define @prefix@_CC_HAS_LAMBDA                  (__has_extension(__cxx_lambdas__))
     # define @prefix@_CC_HAS_NATIVE_CHAR             (1)
+    # define @prefix@_CC_HAS_NATIVE_WCHAR_T          (1)
     # define @prefix@_CC_HAS_NATIVE_CHAR16_T         (__has_extension(__cxx_unicode_literals__))
     # define @prefix@_CC_HAS_NATIVE_CHAR32_T         (__has_extension(__cxx_unicode_literals__))
-    # define @prefix@_CC_HAS_NATIVE_WCHAR_T          (1)
     # define @prefix@_CC_HAS_NOEXCEPT                (__has_extension(__cxx_noexcept__))
     # define @prefix@_CC_HAS_NULLPTR                 (__has_extension(__cxx_nullptr__))
     # define @prefix@_CC_HAS_OVERRIDE                (__has_extension(__cxx_override_control__))
     # define @prefix@_CC_HAS_RVALUE                  (__has_extension(__cxx_rvalue_references__))
     # define @prefix@_CC_HAS_STATIC_ASSERT           (__has_extension(__cxx_static_assert__))
+    # define @prefix@_CC_HAS_VARIADIC_TEMPLATES      (__has_extension(__cxx_variadic_templates__))
     #endif
 
     #if @prefix@_CC_CODEGEAR
-    # define @prefix@_CC_HAS_ATTRIBUTE               (0)
-    # define @prefix@_CC_HAS_BUILTIN                 (0)
-    # define @prefix@_CC_HAS_DECLSPEC                (1)
-
-    # define @prefix@_CC_HAS_ALIGNAS                 (0)
-    # define @prefix@_CC_HAS_ALIGNOF                 (0)
-    # define @prefix@_CC_HAS_ASSUME                  (0)
-    # define @prefix@_CC_HAS_CONSTEXPR               (0)
     # define @prefix@_CC_HAS_DECLSPEC_ALIGN          (@prefix@_CC_CODEGEAR >= 0x0610)
     # define @prefix@_CC_HAS_DECLSPEC_FORCEINLINE    (0)
     # define @prefix@_CC_HAS_DECLSPEC_NOINLINE       (0)
     # define @prefix@_CC_HAS_DECLSPEC_NORETURN       (@prefix@_CC_CODEGEAR >= 0x0610)
+    # define @prefix@_CC_HAS_ALIGNAS                 (0)
+    # define @prefix@_CC_HAS_ALIGNOF                 (0)
+    # define @prefix@_CC_HAS_CONSTEXPR               (0)
     # define @prefix@_CC_HAS_DECLTYPE                (@prefix@_CC_CODEGEAR >= 0x0610)
     # define @prefix@_CC_HAS_DEFAULT_FUNCTION        (0)
     # define @prefix@_CC_HAS_DELETE_FUNCTION         (0)
@@ -633,62 +635,92 @@ exports.CC_FEATURES = {
     # define @prefix@_CC_HAS_INITIALIZER_LIST        (0)
     # define @prefix@_CC_HAS_LAMBDA                  (0)
     # define @prefix@_CC_HAS_NATIVE_CHAR             (1)
+    # define @prefix@_CC_HAS_NATIVE_WCHAR_T          (1)
     # define @prefix@_CC_HAS_NATIVE_CHAR16_T         (0)
     # define @prefix@_CC_HAS_NATIVE_CHAR32_T         (0)
-    # define @prefix@_CC_HAS_NATIVE_WCHAR_T          (1)
     # define @prefix@_CC_HAS_NOEXCEPT                (0)
     # define @prefix@_CC_HAS_NULLPTR                 (0)
     # define @prefix@_CC_HAS_OVERRIDE                (0)
     # define @prefix@_CC_HAS_RVALUE                  (@prefix@_CC_CODEGEAR >= 0x0610)
     # define @prefix@_CC_HAS_STATIC_ASSERT           (@prefix@_CC_CODEGEAR >= 0x0610)
+    # define @prefix@_CC_HAS_VARIADIC_TEMPLATES      (0)
     #endif
 
     #if @prefix@_CC_GCC
-    # define @prefix@_CC_HAS_ATTRIBUTE               (1)
-    # define @prefix@_CC_HAS_BUILTIN                 (1)
-    # define @prefix@_CC_HAS_DECLSPEC                (0)
-
-    # define @prefix@_CC_HAS_ALIGNAS                 (@prefix@_CC_GCC_GE(4, 8, 0) && @prefix@_CC_GCC_CXX0X)
-    # define @prefix@_CC_HAS_ALIGNOF                 (@prefix@_CC_GCC_GE(4, 8, 0) && @prefix@_CC_GCC_CXX0X)
-    # define @prefix@_CC_HAS_ASSUME                  (0)
     # define @prefix@_CC_HAS_ATTRIBUTE_ALIGNED       (@prefix@_CC_GCC_GE(2, 7, 0))
     # define @prefix@_CC_HAS_ATTRIBUTE_ALWAYS_INLINE (@prefix@_CC_GCC_GE(4, 4, 0) && !@prefix@_CC_MINGW)
     # define @prefix@_CC_HAS_ATTRIBUTE_NOINLINE      (@prefix@_CC_GCC_GE(3, 4, 0) && !@prefix@_CC_MINGW)
     # define @prefix@_CC_HAS_ATTRIBUTE_NORETURN      (@prefix@_CC_GCC_GE(2, 5, 0))
+    # define @prefix@_CC_HAS_ATTRIBUTE_OPTIMIZE      (@prefix@_CC_GCC_GE(4, 4, 0))
     # define @prefix@_CC_HAS_BUILTIN_ASSUME          (0)
+    # define @prefix@_CC_HAS_BUILTIN_ASSUME_ALIGNED  (@prefix@_CC_GCC_GE(4, 7, 0))
     # define @prefix@_CC_HAS_BUILTIN_EXPECT          (1)
-    # define @prefix@_CC_HAS_BUILTIN_UNREACHABLE     (@prefix@_CC_GCC_GE(4, 5, 0) && @prefix@_CC_GCC_CXX0X)
-    # define @prefix@_CC_HAS_CONSTEXPR               (@prefix@_CC_GCC_GE(4, 6, 0) && @prefix@_CC_GCC_CXX0X)
-    # define @prefix@_CC_HAS_DECLTYPE                (@prefix@_CC_GCC_GE(4, 3, 0) && @prefix@_CC_GCC_CXX0X)
-    # define @prefix@_CC_HAS_DEFAULT_FUNCTION        (@prefix@_CC_GCC_GE(4, 4, 0) && @prefix@_CC_GCC_CXX0X)
-    # define @prefix@_CC_HAS_DELETE_FUNCTION         (@prefix@_CC_GCC_GE(4, 4, 0) && @prefix@_CC_GCC_CXX0X)
-    # define @prefix@_CC_HAS_FINAL                   (@prefix@_CC_GCC_GE(4, 7, 0) && @prefix@_CC_GCC_CXX0X)
-    # define @prefix@_CC_HAS_INITIALIZER_LIST        (@prefix@_CC_GCC_GE(4, 4, 0) && @prefix@_CC_GCC_CXX0X)
-    # define @prefix@_CC_HAS_LAMBDA                  (@prefix@_CC_GCC_GE(4, 5, 0) && @prefix@_CC_GCC_CXX0X)
+    # define @prefix@_CC_HAS_BUILTIN_UNREACHABLE     (@prefix@_CC_GCC_GE(4, 5, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
+    # define @prefix@_CC_HAS_ALIGNAS                 (@prefix@_CC_GCC_GE(4, 8, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
+    # define @prefix@_CC_HAS_ALIGNOF                 (@prefix@_CC_GCC_GE(4, 8, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
+    # define @prefix@_CC_HAS_CONSTEXPR               (@prefix@_CC_GCC_GE(4, 6, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
+    # define @prefix@_CC_HAS_DECLTYPE                (@prefix@_CC_GCC_GE(4, 3, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
+    # define @prefix@_CC_HAS_DEFAULT_FUNCTION        (@prefix@_CC_GCC_GE(4, 4, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
+    # define @prefix@_CC_HAS_DELETE_FUNCTION         (@prefix@_CC_GCC_GE(4, 4, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
+    # define @prefix@_CC_HAS_FINAL                   (@prefix@_CC_GCC_GE(4, 7, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
+    # define @prefix@_CC_HAS_INITIALIZER_LIST        (@prefix@_CC_GCC_GE(4, 4, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
+    # define @prefix@_CC_HAS_LAMBDA                  (@prefix@_CC_GCC_GE(4, 5, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
     # define @prefix@_CC_HAS_NATIVE_CHAR             (1)
-    # define @prefix@_CC_HAS_NATIVE_CHAR16_T         (@prefix@_CC_GCC_GE(4, 5, 0) && @prefix@_CC_GCC_CXX0X)
-    # define @prefix@_CC_HAS_NATIVE_CHAR32_T         (@prefix@_CC_GCC_GE(4, 5, 0) && @prefix@_CC_GCC_CXX0X)
     # define @prefix@_CC_HAS_NATIVE_WCHAR_T          (1)
-    # define @prefix@_CC_HAS_NOEXCEPT                (@prefix@_CC_GCC_GE(4, 6, 0) && @prefix@_CC_GCC_CXX0X)
-    # define @prefix@_CC_HAS_NULLPTR                 (@prefix@_CC_GCC_GE(4, 6, 0) && @prefix@_CC_GCC_CXX0X)
-    # define @prefix@_CC_HAS_OVERRIDE                (@prefix@_CC_GCC_GE(4, 7, 0) && @prefix@_CC_GCC_CXX0X)
-    # define @prefix@_CC_HAS_RVALUE                  (@prefix@_CC_GCC_GE(4, 3, 0) && @prefix@_CC_GCC_CXX0X)
-    # define @prefix@_CC_HAS_STATIC_ASSERT           (@prefix@_CC_GCC_GE(4, 3, 0) && @prefix@_CC_GCC_CXX0X)
+    # define @prefix@_CC_HAS_NATIVE_CHAR16_T         (@prefix@_CC_GCC_GE(4, 5, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
+    # define @prefix@_CC_HAS_NATIVE_CHAR32_T         (@prefix@_CC_GCC_GE(4, 5, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
+    # define @prefix@_CC_HAS_NOEXCEPT                (@prefix@_CC_GCC_GE(4, 6, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
+    # define @prefix@_CC_HAS_NULLPTR                 (@prefix@_CC_GCC_GE(4, 6, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
+    # define @prefix@_CC_HAS_OVERRIDE                (@prefix@_CC_GCC_GE(4, 7, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
+    # define @prefix@_CC_HAS_RVALUE                  (@prefix@_CC_GCC_GE(4, 3, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
+    # define @prefix@_CC_HAS_STATIC_ASSERT           (@prefix@_CC_GCC_GE(4, 3, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
+    # define @prefix@_CC_HAS_VARIADIC_TEMPLATES      (@prefix@_CC_GCC_GE(4, 3, 0) && @prefix@_CC_CXX_VERSION >= 201103L)
     #endif
-    
-    #if @prefix@_CC_MSC
-    # define @prefix@_CC_HAS_ATTRIBUTE               (0)
-    # define @prefix@_CC_HAS_BUILTIN                 (0)
-    # define @prefix@_CC_HAS_DECLSPEC                (1)
 
-    # define @prefix@_CC_HAS_ALIGNAS                 (@prefix@_CC_MSC_GE(19, 0, 0))
-    # define @prefix@_CC_HAS_ALIGNOF                 (@prefix@_CC_MSC_GE(19, 0, 0))
+    #if @prefix@_CC_INTEL
+    # define @prefix@_CC_HAS_ATTRIBUTE_ALIGNED       (@prefix@_CC_INTEL_COMPAT_MODE)
+    # define @prefix@_CC_HAS_ATTRIBUTE_ALWAYS_INLINE (@prefix@_CC_INTEL_COMPAT_MODE)
+    # define @prefix@_CC_HAS_ATTRIBUTE_NOINLINE      (@prefix@_CC_INTEL_COMPAT_MODE)
+    # define @prefix@_CC_HAS_ATTRIBUTE_NORETURN      (@prefix@_CC_INTEL_COMPAT_MODE)
+    # define @prefix@_CC_HAS_ATTRIBUTE_OPTIMIZE      (@prefix@_CC_INTEL_COMPAT_MODE)
+    # define @prefix@_CC_HAS_BUILTIN_EXPECT          (@prefix@_CC_INTEL_COMPAT_MODE)
+    # define @prefix@_CC_HAS_DECLSPEC_ALIGN          (@prefix@_CC_INTEL_COMPAT_MODE == 0)
+    # define @prefix@_CC_HAS_DECLSPEC_FORCEINLINE    (@prefix@_CC_INTEL_COMPAT_MODE == 0)
+    # define @prefix@_CC_HAS_DECLSPEC_NOINLINE       (@prefix@_CC_INTEL_COMPAT_MODE == 0)
+    # define @prefix@_CC_HAS_DECLSPEC_NORETURN       (@prefix@_CC_INTEL_COMPAT_MODE == 0)
     # define @prefix@_CC_HAS_ASSUME                  (1)
-    # define @prefix@_CC_HAS_CONSTEXPR               (@prefix@_CC_MSC_GE(19, 0, 0))
+    # define @prefix@_CC_HAS_ASSUME_ALIGNED          (1)
+    # define @prefix@_CC_HAS_ALIGNAS                 (@prefix@_CC_INTEL >= 1500)
+    # define @prefix@_CC_HAS_ALIGNOF                 (@prefix@_CC_INTEL >= 1500)
+    # define @prefix@_CC_HAS_CONSTEXPR               (@prefix@_CC_INTEL >= 1400)
+    # define @prefix@_CC_HAS_DECLTYPE                (@prefix@_CC_INTEL >= 1200)
+    # define @prefix@_CC_HAS_DEFAULT_FUNCTION        (@prefix@_CC_INTEL >= 1200)
+    # define @prefix@_CC_HAS_DELETE_FUNCTION         (@prefix@_CC_INTEL >= 1200)
+    # define @prefix@_CC_HAS_FINAL                   (@prefix@_CC_INTEL >= 1400)
+    # define @prefix@_CC_HAS_INITIALIZER_LIST        (@prefix@_CC_INTEL >= 1400)
+    # define @prefix@_CC_HAS_LAMBDA                  (@prefix@_CC_INTEL >= 1200)
+    # define @prefix@_CC_HAS_NATIVE_CHAR             (1)
+    # define @prefix@_CC_HAS_NATIVE_WCHAR_T          (1)
+    # define @prefix@_CC_HAS_NATIVE_CHAR16_T         (@prefix@_CC_INTEL >= 1400 || (@prefix@_CC_INTEL_COMPAT_MODE > 0 && @prefix@_CC_INTEL >= 1206))
+    # define @prefix@_CC_HAS_NATIVE_CHAR32_T         (@prefix@_CC_INTEL >= 1400 || (@prefix@_CC_INTEL_COMPAT_MODE > 0 && @prefix@_CC_INTEL >= 1206))
+    # define @prefix@_CC_HAS_NOEXCEPT                (@prefix@_CC_INTEL >= 1400)
+    # define @prefix@_CC_HAS_NULLPTR                 (@prefix@_CC_INTEL >= 1206)
+    # define @prefix@_CC_HAS_OVERRIDE                (@prefix@_CC_INTEL >= 1400)
+    # define @prefix@_CC_HAS_RVALUE                  (@prefix@_CC_INTEL >= 1110)
+    # define @prefix@_CC_HAS_STATIC_ASSERT           (@prefix@_CC_INTEL >= 1110)
+    # define @prefix@_CC_HAS_VARIADIC_TEMPLATES      (@prefix@_CC_INTEL >= 1206)
+    #endif
+
+    #if @prefix@_CC_MSC
     # define @prefix@_CC_HAS_DECLSPEC_ALIGN          (1)
     # define @prefix@_CC_HAS_DECLSPEC_FORCEINLINE    (1)
     # define @prefix@_CC_HAS_DECLSPEC_NOINLINE       (1)
     # define @prefix@_CC_HAS_DECLSPEC_NORETURN       (1)
+    # define @prefix@_CC_HAS_ASSUME                  (1)
+    # define @prefix@_CC_HAS_ASSUME_ALIGNED          (0)
+    # define @prefix@_CC_HAS_ALIGNAS                 (@prefix@_CC_MSC_GE(19, 0, 0))
+    # define @prefix@_CC_HAS_ALIGNOF                 (@prefix@_CC_MSC_GE(19, 0, 0))
+    # define @prefix@_CC_HAS_CONSTEXPR               (@prefix@_CC_MSC_GE(19, 0, 0))
     # define @prefix@_CC_HAS_DECLTYPE                (@prefix@_CC_MSC_GE(16, 0, 0))
     # define @prefix@_CC_HAS_DEFAULT_FUNCTION        (@prefix@_CC_MSC_GE(18, 0, 0))
     # define @prefix@_CC_HAS_DELETE_FUNCTION         (@prefix@_CC_MSC_GE(18, 0, 0))
@@ -696,37 +728,71 @@ exports.CC_FEATURES = {
     # define @prefix@_CC_HAS_INITIALIZER_LIST        (@prefix@_CC_MSC_GE(18, 0, 0))
     # define @prefix@_CC_HAS_LAMBDA                  (@prefix@_CC_MSC_GE(16, 0, 0))
     # define @prefix@_CC_HAS_NATIVE_CHAR             (1)
-    # define @prefix@_CC_HAS_NATIVE_CHAR16_T         (@prefix@_CC_MSC_GE(19, 0, 0))
-    # define @prefix@_CC_HAS_NATIVE_CHAR32_T         (@prefix@_CC_MSC_GE(19, 0, 0))
     # if defined(_NATIVE_WCHAR_T_DEFINED)
     #  define @prefix@_CC_HAS_NATIVE_WCHAR_T         (1)
     # else
     #  define @prefix@_CC_HAS_NATIVE_WCHAR_T         (0)
     # endif
+    # define @prefix@_CC_HAS_NATIVE_CHAR16_T         (@prefix@_CC_MSC_GE(19, 0, 0))
+    # define @prefix@_CC_HAS_NATIVE_CHAR32_T         (@prefix@_CC_MSC_GE(19, 0, 0))
     # define @prefix@_CC_HAS_NOEXCEPT                (@prefix@_CC_MSC_GE(19, 0, 0))
     # define @prefix@_CC_HAS_NULLPTR                 (@prefix@_CC_MSC_GE(16, 0, 0))
     # define @prefix@_CC_HAS_OVERRIDE                (@prefix@_CC_MSC_GE(14, 0, 0))
     # define @prefix@_CC_HAS_RVALUE                  (@prefix@_CC_MSC_GE(16, 0, 0))
     # define @prefix@_CC_HAS_STATIC_ASSERT           (@prefix@_CC_MSC_GE(16, 0, 0))
+    # define @prefix@_CC_HAS_VARIADIC_TEMPLATES      (@prefix@_CC_MSC_GE(18, 0, 0))
     #endif
 
-    #if !@prefix@_CC_HAS_ATTRIBUTE
+    // Fixup some vendor specific keywords.
+    #if !defined(@prefix@_CC_HAS_ASSUME)
+    # define @prefix@_CC_HAS_ASSUME                  (0)
+    #endif
+    #if !defined(@prefix@_CC_HAS_ASSUME_ALIGNED)
+    # define @prefix@_CC_HAS_ASSUME_ALIGNED          (0)
+    #endif
+
+    // Fixup compilers that don't support '__attribute__'.
+    #if !defined(@prefix@_CC_HAS_ATTRIBUTE_ALIGNED)
     # define @prefix@_CC_HAS_ATTRIBUTE_ALIGNED       (0)
+    #endif
+    #if !defined(@prefix@_CC_HAS_ATTRIBUTE_ALWAYS_INLINE)
     # define @prefix@_CC_HAS_ATTRIBUTE_ALWAYS_INLINE (0)
+    #endif
+    #if !defined(@prefix@_CC_HAS_ATTRIBUTE_NOINLINE)
     # define @prefix@_CC_HAS_ATTRIBUTE_NOINLINE      (0)
+    #endif
+    #if !defined(@prefix@_CC_HAS_ATTRIBUTE_NORETURN)
     # define @prefix@_CC_HAS_ATTRIBUTE_NORETURN      (0)
     #endif
+    #if !defined(@prefix@_CC_HAS_ATTRIBUTE_OPTIMIZE)
+    # define @prefix@_CC_HAS_ATTRIBUTE_OPTIMIZE      (0)
+    #endif
 
-    #if !@prefix@_CC_HAS_BUILTIN
+    // Fixup compilers that don't support '__builtin?'.
+    #if !defined(@prefix@_CC_HAS_BUILTIN_ASSUME)
     # define @prefix@_CC_HAS_BUILTIN_ASSUME          (0)
+    #endif
+    #if !defined(@prefix@_CC_HAS_BUILTIN_ASSUME_ALIGNED)
+    # define @prefix@_CC_HAS_BUILTIN_ASSUME_ALIGNED  (0)
+    #endif
+    #if !defined(@prefix@_CC_HAS_BUILTIN_EXPECT)
     # define @prefix@_CC_HAS_BUILTIN_EXPECT          (0)
+    #endif
+    #if !defined(@prefix@_CC_HAS_BUILTIN_UNREACHABLE)
     # define @prefix@_CC_HAS_BUILTIN_UNREACHABLE     (0)
     #endif
 
-    #if !@prefix@_CC_HAS_DECLSPEC
+    // Fixup compilers that don't support 'declspec'.
+    #if !defined(@prefix@_CC_HAS_DECLSPEC_ALIGN)
     # define @prefix@_CC_HAS_DECLSPEC_ALIGN          (0)
+    #endif
+    #if !defined(@prefix@_CC_HAS_DECLSPEC_FORCEINLINE)
     # define @prefix@_CC_HAS_DECLSPEC_FORCEINLINE    (0)
+    #endif
+    #if !defined(@prefix@_CC_HAS_DECLSPEC_NOINLINE)
     # define @prefix@_CC_HAS_DECLSPEC_NOINLINE       (0)
+    #endif
+    #if !defined(@prefix@_CC_HAS_DECLSPEC_NORETURN)
     # define @prefix@_CC_HAS_DECLSPEC_NORETURN       (0)
     #endif
   `
@@ -772,9 +838,7 @@ exports.CC_INLINE = {
   template: `
     // \\def @prefix@_INLINE
     // Always inline the decorated function.
-    #if @prefix@_CC_HAS_ATTRIBUTE_ALWAYS_INLINE && @prefix@_CC_CLANG
-    # define @prefix@_INLINE inline __attribute__((__always_inline__, __visibility__("hidden")))
-    #elif @prefix@_CC_HAS_ATTRIBUTE_ALWAYS_INLINE
+    #if @prefix@_CC_HAS_ATTRIBUTE_ALWAYS_INLINE
     # define @prefix@_INLINE inline __attribute__((__always_inline__))
     #elif @prefix@_CC_HAS_DECLSPEC_FORCEINLINE
     # define @prefix@_INLINE __forceinline
@@ -915,6 +979,21 @@ exports.CC_ASSUME = {
   `
 };
 
+exports.CC_ASSUME_ALIGNED = {
+  requires: ["CC", "CC_FEATURES"],
+  template: `
+    // \\def @prefix@_ASSUME_ALIGNED(p, alignment)
+    // Assume that the pointer 'p' is aligned to at least 'alignment' bytes.
+    #if @prefix@_CC_HAS_ASSUME_ALIGNED
+    # define @prefix@_ASSUME_ALIGNED(p, alignment) __assume_aligned(p, alignment)
+    #elif @prefix@_CC_HAS_BUILTIN_ASSUME_ALIGNED
+    # define @prefix@_ASSUME_ALIGNED(p, alignment) p = __builtin_assume_aligned(p, alignment)
+    #else
+    # define @prefix@_ASSUME_ALIGNED(p, alignment) ((void)0)
+    #endif
+  `
+};
+
 exports.CC_EXPECT = {
   requires: ["CC", "CC_FEATURES"],
   template: `
@@ -923,7 +1002,7 @@ exports.CC_EXPECT = {
     //
     // \\def @prefix@_UNLIKELY(exp)
     // Expression exp is likely to be false.
-    #if @prefix@_HAS_BUILTIN_EXPECT
+    #if @prefix@_CC_HAS_BUILTIN_EXPECT
     # define @prefix@_LIKELY(exp) __builtin_expect(!!(exp), 1)
     # define @prefix@_UNLIKELY(exp) __builtin_expect(!!(exp), 0)
     #else

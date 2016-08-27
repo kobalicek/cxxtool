@@ -1,6 +1,6 @@
 {
   "name": "cxxtool",
-  "version": "0.0.1",
+  "version": "0.0.3",
 
   "description": "A tool designed to maintain C, C++ and ObjectiveC projects.",
   "keywords": [

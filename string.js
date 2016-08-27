@@ -317,7 +317,7 @@ function parseGenerators(s) {
       if (!comment) break;
 
       // End mark.
-      i += comment.length;          
+      i += comment.length;
       if (/^\s*\/\/\s*\}%\]\s*$/.test(comment)) {
         success = true;
         break;
