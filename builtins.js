@@ -590,6 +590,7 @@ exports.CC_FEATURES = {
   requires: ["CC"],
   template: `
     #if @prefix@_CC_CLANG
+    # define @prefix@_CC_HAS_ATTRIBUTE               (1)
     # define @prefix@_CC_HAS_ATTRIBUTE_ALIGNED       (__has_attribute(__aligned__))
     # define @prefix@_CC_HAS_ATTRIBUTE_ALWAYS_INLINE (__has_attribute(__always_inline__))
     # define @prefix@_CC_HAS_ATTRIBUTE_NOINLINE      (__has_attribute(__noinline__))
@@ -647,6 +648,7 @@ exports.CC_FEATURES = {
     #endif
 
     #if @prefix@_CC_GCC
+    # define @prefix@_CC_HAS_ATTRIBUTE               (1)
     # define @prefix@_CC_HAS_ATTRIBUTE_ALIGNED       (@prefix@_CC_GCC_GE(2, 7, 0))
     # define @prefix@_CC_HAS_ATTRIBUTE_ALWAYS_INLINE (@prefix@_CC_GCC_GE(4, 4, 0) && !@prefix@_CC_MINGW)
     # define @prefix@_CC_HAS_ATTRIBUTE_NOINLINE      (@prefix@_CC_GCC_GE(3, 4, 0) && !@prefix@_CC_MINGW)
@@ -678,6 +680,7 @@ exports.CC_FEATURES = {
     #endif
 
     #if @prefix@_CC_INTEL
+    # define @prefix@_CC_HAS_ATTRIBUTE               (@prefix@_CC_INTEL_COMPAT_MODE)
     # define @prefix@_CC_HAS_ATTRIBUTE_ALIGNED       (@prefix@_CC_INTEL_COMPAT_MODE)
     # define @prefix@_CC_HAS_ATTRIBUTE_ALWAYS_INLINE (@prefix@_CC_INTEL_COMPAT_MODE)
     # define @prefix@_CC_HAS_ATTRIBUTE_NOINLINE      (@prefix@_CC_INTEL_COMPAT_MODE)
@@ -752,6 +755,9 @@ exports.CC_FEATURES = {
     #endif
 
     // Fixup compilers that don't support '__attribute__'.
+    #if !defined(@prefix@_CC_HAS_ATTRIBUTE)
+    # define @prefix@_CC_HAS_ATTRIBUTE               (0)
+    #endif
     #if !defined(@prefix@_CC_HAS_ATTRIBUTE_ALIGNED)
     # define @prefix@_CC_HAS_ATTRIBUTE_ALIGNED       (0)
     #endif
@@ -1137,7 +1143,7 @@ exports.CC_REGPARM = {
   template: `
     // \\def @prefix@_REGPARM(n)
     // A custom calling convention which passes n arguments in registers.
-    #if @prefix@_ARCH_X86 && (@prefix@_CC_GCC || @prefix@_CC_CLANG)
+    #if @prefix@_ARCH_X86 && @prefix@_CC_HAS_ATTRIBUTE
     # define @prefix@_REGPARM(n) __attribute__((__regparm__(n)))
     #else
     # define @prefix@_REGPARM(n)
