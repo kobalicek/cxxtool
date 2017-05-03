@@ -1012,8 +1012,8 @@ exports.CC_EXPECT = {
     # define @prefix@_LIKELY(exp) __builtin_expect(!!(exp), 1)
     # define @prefix@_UNLIKELY(exp) __builtin_expect(!!(exp), 0)
     #else
-    # define @prefix@_LIKELY(exp) exp
-    # define @prefix@_UNLIKELY(exp) exp
+    # define @prefix@_LIKELY(exp) (exp)
+    # define @prefix@_UNLIKELY(exp) (exp)
     #endif
   `
 };
@@ -1269,13 +1269,9 @@ exports.STDTYPES = {
     typedef unsigned __int64 uint64_t;
     #  endif
     # endif
-    # define @prefix@_INT64_C(x) (x##i64)
-    # define @prefix@_UINT64_C(x) (x##ui64)
     #else
     # include <stdint.h>
     # include <limits.h>
-    # define @prefix@_INT64_C(x) (x##ll)
-    # define @prefix@_UINT64_C(x) (x##ull)
     #endif
   `
 };
